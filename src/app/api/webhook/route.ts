@@ -26,9 +26,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (event.type === 'checkout.session.completed') {
-    const session = event.data.object as {
+    const session = event.data.object as unknown as {
       id: string;
-      metadata: { name: string; surname: string; social: string; email: string; passcode: string };
+      metadata: Record<string, string>;
       payment_status: string;
     }
 
