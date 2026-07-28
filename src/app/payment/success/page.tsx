@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 
 interface Member {
@@ -26,7 +26,7 @@ function formatDate(iso: string): string {
   })
 }
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const sessionId = searchParams.get('session_id')
@@ -193,5 +193,23 @@ export default function PaymentSuccessPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={
+      <div className="page-loader" role="status" aria-label="Loading...">
+        <div className="page-loader-inner">
+          <p className="loader-brand">UMGORA</p>
+          <div className="loader-bar"><div className="loader-bar-fill" /></div>
+          <p style={{ fontSize: '0.72rem', color: 'var(--color-charcoal-muted)', letterSpacing: '0.08em', marginTop: '0.5rem' }}>
+            Loading...
+          </p>
+        </div>
+      </div>
+    }>
+      <PaymentSuccessContent />
+    </Suspense>
   )
 }
