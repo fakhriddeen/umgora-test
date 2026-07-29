@@ -55,7 +55,7 @@ function PaymentSuccessContent() {
           return true
         }
 
-        if (data.pending && attempts < 8) {
+        if (data.pending && attempts < 5) {
           return false // will retry
         }
 
@@ -72,7 +72,7 @@ function PaymentSuccessContent() {
     let pollCount = 0
     const poll = async () => {
       const done = await fetchMember()
-      if (!done && pollCount < 8) {
+      if (!done && pollCount < 5) {
         pollCount++
         setAttempts(pollCount)
         setTimeout(poll, 2000)
@@ -115,14 +115,26 @@ function PaymentSuccessContent() {
         }}>
           ⚠️
         </div>
-        <h1 className="success-title" style={{ fontSize: '2rem' }}>Something went wrong</h1>
-        <p className="success-subtitle">{error}</p>
-        <button
-          onClick={() => router.push('/')}
-          style={{ marginTop: '2rem', cursor: 'pointer', color: 'var(--color-champagne)', fontSize: '0.8rem', letterSpacing: '0.1em', background: 'none', border: 'none' }}
-        >
-          ← Return to UMGORA
-        </button>
+        <h1 className="success-title" style={{ fontSize: '2rem' }}>Payment Confirmed</h1>
+        <p className="success-subtitle">
+          {error} Your payment was successful, but your dashboard might take a few moments to activate.
+        </p>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="btn-cta"
+            style={{ fontSize: '0.72rem', padding: '0.875rem 2rem' }}
+          >
+            Go to Dashboard
+            <span className="btn-cta-arrow">→</span>
+          </button>
+          <button
+            onClick={() => router.push('/')}
+            style={{ cursor: 'pointer', color: 'var(--color-champagne)', fontSize: '0.8rem', letterSpacing: '0.1em', background: 'none', border: 'none' }}
+          >
+            ← Return to UMGORA
+          </button>
+        </div>
       </div>
     )
   }
