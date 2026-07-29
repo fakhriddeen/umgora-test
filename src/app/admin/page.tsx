@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 interface Member {
   id: string
@@ -75,14 +76,26 @@ export default function AdminPage() {
     <div className="admin-page">
       {/* Admin Header */}
       <header className="admin-header">
-        <div className="admin-brand">
-          <span className="admin-brand-name">UMGORA</span>
-          <span className="admin-badge">Admin</span>
-        </div>
+        <Link href="/" style={{ textDecoration: 'none' }}>
+          <div className="admin-brand" style={{ cursor: 'pointer' }}>
+            <span className="admin-brand-name">UMGORA</span>
+            <span className="admin-badge">Admin</span>
+          </div>
+        </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-lg)' }}>
           <span style={{ fontSize: '0.72rem', color: 'rgba(250,249,246,0.4)', letterSpacing: '0.06em' }}>
             admin@umgora.com
           </span>
+          <Link href="/" style={{
+            fontSize: '0.68rem',
+            fontWeight: 500,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'rgba(250, 249, 246, 0.5)',
+            textDecoration: 'none'
+          }}>
+            Home
+          </Link>
           <button
             id="btn-admin-signout"
             onClick={handleSignOut}

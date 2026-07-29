@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 interface Member {
   id: string
@@ -85,9 +86,21 @@ export default function DashboardPage() {
     <div className="dashboard-page">
       {/* Dashboard Header */}
       <header className="dashboard-header">
-        <span className="dashboard-nav-brand">UMGORA</span>
-        <div className="dashboard-nav-right">
+        <Link href="/" style={{ textDecoration: 'none' }}>
+          <span className="dashboard-nav-brand" style={{ cursor: 'pointer' }}>UMGORA</span>
+        </Link>
+        <div className="dashboard-nav-right" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           <span className="dashboard-greeting">Welcome, {member.name}</span>
+          <Link href="/" style={{
+            fontSize: '0.68rem',
+            fontWeight: 500,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'var(--color-charcoal-muted)',
+            textDecoration: 'none'
+          }}>
+            Home
+          </Link>
           <button
             id="btn-dashboard-signout"
             className="btn-signout"
