@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     if (!name || !surname || !email || !passcode) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
-
+    //jst for
     const appUrl = 'https://umgora.com';
 
     const session = await stripe.checkout.sessions.create({
