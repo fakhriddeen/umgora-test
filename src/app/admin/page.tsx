@@ -5,19 +5,16 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 
-interface Place {
+interface Member {
   id: string
   membership_number: string
-  first_name: string | null
-  last_name: string | null
-  email: string | null
+  name: string
+  surname: string
+  email: string
   social_handle: string | null
   created_at: string
-  members: {
-    email: string
-    payment_status: string
-    stripe_payment_id: string | null
-  }
+  stripe_payment_id: string | null
+  payment_status: string
 }
 
 function formatDate(iso: string): string {
@@ -30,15 +27,15 @@ function formatDate(iso: string): string {
 
 export default function AdminPage() {
   const router = useRouter()
-  const [places, setPlaces] = useState<Place[]>([])
+  const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetchPlaces()
+    fetchMembers()
   }, [])
 
-  async function fetchPlaces() {
+  async function fetchMembers() {
     try {
       const res = await fetch('/api/admin')
       if (res.status === 401) {
@@ -47,9 +44,9 @@ export default function AdminPage() {
       }
       const data = await res.json()
       if (res.ok) {
-        setPlaces(data.members || [])
+        setMembers(data.members || [])
       } else {
-        setError(data.error || 'Failed to load places')
+        setError(data.error || 'Failed to load members')
       }
     } catch {
       setError('Network error')
@@ -178,24 +175,24 @@ export default function AdminPage() {
         {/* Stats */}
         <div className="admin-stats">
           <div className="admin-stat-card">
-            <p className="admin-stat-value">{places.length}</p>
-            <p className="admin-stat-label">Total Placements</p>
+            <p className="admin-stat-value">{members.length}</p>
+            <p className="admin-stat-label">Total Members</p>
           </div>
           <div className="admin-stat-card">
             <p className="admin-stat-value">
-              {places.filter(p => p.members?.payment_status === 'paid').length}
+              {members.filter(p => p.payment_status === 'paid').length}
             </p>
-            <p className="admin-stat-label">Paid Placements</p>
+            <p className="admin-stat-label">Paid Members</p>
           </div>
           <div className="admin-stat-card">
             <p className="admin-stat-value">
-              {places.filter(p => p.social_handle).length}
+              {members.filter(p => p.social_handle).length}
             </p>
             <p className="admin-stat-label">With Social</p>
           </div>
           <div className="admin-stat-card">
             <p className="admin-stat-value">
-              {places.filter(p => {
+              {members.filter(p => {
                 const today = new Date()
                 const created = new Date(p.created_at)
                 const diff = (today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)
@@ -224,56 +221,52 @@ export default function AdminPage() {
         {/* Members Table */}
         <div className="admin-table-section">
           <div className="admin-table-header">
-            <h2 className="admin-table-title">Registered Placements</h2>
-            <span className="admin-table-count">{places.length} records</span>
+            <h2 className="admin-table-title">Registered Members</h2>
+            <span className="admin-table-count">{members.length} records</span>
           </div>
 
           <div className="admin-table-wrap">
-            {places.length === 0 ? (
+            {members.length === 0 ? (
               <div className="admin-empty">
                 <div className="admin-empty-icon">◈</div>
                 <p style={{ fontSize: '0.82rem', letterSpacing: '0.06em' }}>
-                  No placements registered yet
+                  No members registered yet
                 </p>
               </div>
             ) : (
-              <table className="admin-table" aria-label="Registered placements">
+              <table className="admin-table" aria-label="Registered members">
                 <thead>
                   <tr>
                     <th scope="col">#</th>
                     <th scope="col">Membership ID</th>
-                    <th scope="col">Place Name</th>
-                    <th scope="col">Place Email</th>
-                    <th scope="col">Master Email</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Email</th>
                     <th scope="col">Social</th>
                     <th scope="col">Status</th>
                     <th scope="col">Joined</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {places.map((place, index) => (
-                    <tr key={place.id}>
+                  {members.map((member, index) => (
+                    <tr key={member.id}>
                       <td style={{ color: 'rgba(250,249,246,0.3)', fontSize: '0.72rem' }}>
                         {index + 1}
                       </td>
                       <td className="membership-number">
-                        {place.membership_number.slice(0,4)} · {place.membership_number.slice(4,8)} · {place.membership_number.slice(8,10)}
+                        {member.membership_number.slice(0,4)} · {member.membership_number.slice(4,8)} · {member.membership_number.slice(8,10)}
                       </td>
                       <td>
                         <div style={{ fontWeight: 500 }}>
-                          {place.first_name ? `${place.first_name} ${place.last_name || ''}` : <span style={{ color: 'rgba(250,249,246,0.3)' }}>Legacy Auto-sync</span>}
+                          {member.name} {member.surname}
                         </div>
                       </td>
                       <td style={{ color: 'rgba(250,249,246,0.8)' }}>
-                        {place.email || <span style={{ color: 'rgba(250,249,246,0.3)' }}>Legacy Auto-sync</span>}
-                      </td>
-                      <td style={{ color: 'rgba(250,249,246,0.5)', fontSize: '0.8rem' }}>
-                        {place.members?.email}
+                        {member.email}
                       </td>
                       <td>
-                        {place.social_handle ? (
+                        {member.social_handle ? (
                           <span style={{ color: 'var(--color-champagne-light)' }}>
-                            {place.social_handle}
+                            {member.social_handle}
                           </span>
                         ) : (
                           <span style={{ color: 'rgba(250,249,246,0.25)', fontStyle: 'italic' }}>
@@ -282,13 +275,13 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td>
-                        <span className={`status-badge ${place.members?.payment_status === 'paid' ? 'paid' : 'pending'}`}>
+                        <span className={`status-badge ${member.payment_status === 'paid' ? 'paid' : 'pending'}`}>
                           <span className="status-dot" />
-                          {place.members?.payment_status || 'unknown'}
+                          {member.payment_status || 'unknown'}
                         </span>
                       </td>
                       <td style={{ color: 'rgba(250,249,246,0.5)', fontSize: '0.78rem' }}>
-                        {formatDate(place.created_at)}
+                        {formatDate(member.created_at)}
                       </td>
                     </tr>
                   ))}
