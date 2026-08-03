@@ -125,6 +125,10 @@ export default function RegisterModal({ onClose }: RegisterModalProps) {
 
       // Redirect to Stripe Checkout
       if (data.url) {
+        // Temporarily store credentials to auto-login on payment success
+        sessionStorage.setItem('umgora_checkout_email', form.email.trim())
+        sessionStorage.setItem('umgora_checkout_passcode', form.passcode)
+        
         window.location.href = data.url
       }
     } catch {

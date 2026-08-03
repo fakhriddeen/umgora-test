@@ -71,8 +71,8 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
   const { data, error } = await supabase
-    .from('members')
-    .select('*')
+    .from('places')
+    .select('*, members(email, payment_status, stripe_payment_id)')
     .order('created_at', { ascending: false })
 
   if (error) {

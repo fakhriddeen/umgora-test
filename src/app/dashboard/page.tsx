@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
+import { syncAndFetchMember } from '@/app/actions/sync-profile'
+import { Copy, Check } from 'lucide-react'
+import AcquirePlacementModal from '@/components/dashboard/AcquirePlacementModal'
 
 interface Member {
   id: string
@@ -14,8 +18,21 @@ interface Member {
   created_at: string
 }
 
+interface Place {
+  id: string
+  membership_number: string
+  first_name?: string
+  last_name?: string
+  email?: string
+  social_handle?: string | null
+  created_at: string
+}
+
 function formatMemberNumber(num: string): string {
-  return `${num.slice(0,4)} · ${num.slice(4,7)} · ${num.slice(7,10)}`
+  if (num.length === 10 && num.match(/^[A-Z0-9]+$/)) {
+    return `${num.slice(0,4)} · ${num.slice(4,8)} · ${num.slice(8,10)}`
+  }
+  return num
 }
 
 function formatDate(iso: string): string {
@@ -29,25 +46,121 @@ function formatDate(iso: string): string {
 export default function DashboardPage() {
   const router = useRouter()
   const [member, setMember] = useState<Member | null>(null)
+  const [places, setPlaces] = useState<Place[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'places' | 'account'>('places')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [isAcquireModalOpen, setIsAcquireModalOpen] = useState(false)
 
   useEffect(() => {
-    // Load member from localStorage
-    const stored = localStorage.getItem('umgora_member')
-    if (stored) {
+    async function checkAuth() {
       try {
-        setMember(JSON.parse(stored))
-      } catch {
-        // Invalid data
+        const { data: { user } } = await supabase.auth.getUser();
+        console.log('[Auth Check] User ID:', user?.id ?? 'No User');
+        
+        if (!user) {
+          router.replace('/login');
+          return;
+        }
+
+        if (user.email) {
+          // Attempt standard client fetch first
+          let { data: memberRecord } = await supabase
+            .from('members')
+            .select('*')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          // If RLS blocked it because it's unlinked, hit the server action to sync it
+          if (!memberRecord) {
+            try {
+              memberRecord = await syncAndFetchMember(user.email, user.id);
+            } catch (err) {
+              console.error("Failed to sync profile:", err);
+            }
+          }
+
+          if (memberRecord) {
+            // Populate UI with real data
+            setMember(memberRecord);
+
+            // Fetch places
+            const { data: placesData } = await supabase
+              .from('places')
+              .select('*')
+              .eq('member_id', user.id)
+              .order('created_at', { ascending: true });
+            
+            if (placesData && placesData.length > 0) {
+              setPlaces(placesData);
+            } else {
+              // Fallback to legacy member.membership_number if places not migrated properly yet
+              setPlaces([{
+                id: 'legacy',
+                membership_number: memberRecord.membership_number,
+                created_at: memberRecord.created_at
+              }]);
+            }
+            
+            setLoading(false);
+          } else {
+            // Only fallback if it TRULY doesn't exist in the database
+            setMember({
+              id: user.id,
+              membership_number: 'Pending',
+              name: 'Member',
+              surname: '',
+              email: user.email || '',
+              social_handle: null,
+              created_at: new Date().toISOString()
+            } as Member);
+            
+            setPlaces([{
+              id: 'pending',
+              membership_number: 'Pending',
+              created_at: new Date().toISOString()
+            }]);
+            
+            setLoading(false);
+          }
+        }
+      } catch (err) {
+        console.error(err);
+        router.replace('/login');
       }
     }
-    setLoading(false)
-  }, [])
+    
+    checkAuth();
+  }, [router]);
 
-  function handleSignOut() {
-    localStorage.removeItem('umgora_member')
-    router.push('/')
-  }
+  const handleSignOut = async () => {
+    try {
+      if (typeof window !== 'undefined' && supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.error('Error signing out of Supabase:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
+
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+
+      window.location.href = '/';
+    }
+  };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   if (loading) {
     return (
@@ -60,27 +173,7 @@ export default function DashboardPage() {
     )
   }
 
-  if (!member) {
-    return (
-      <div className="page-loader">
-        <div className="page-loader-inner" style={{ textAlign: 'center', gap: '1.5rem' }}>
-          <div style={{ fontFamily: 'var(--font-serif)', fontSize: '1.5rem', letterSpacing: '0.2em', color: 'var(--color-charcoal)' }}>
-            UMGORA
-          </div>
-          <p style={{ fontSize: '0.82rem', color: 'var(--color-charcoal-muted)', maxWidth: '280px', lineHeight: 1.7 }}>
-            No membership found. Please complete the registration and payment process first.
-          </p>
-          <button
-            onClick={() => router.push('/')}
-            className="btn-login"
-            style={{ margin: '0 auto' }}
-          >
-            Return to UMGORA
-          </button>
-        </div>
-      </div>
-    )
-  }
+  if (!member) return null;
 
   return (
     <div className="dashboard-page">
@@ -122,103 +215,141 @@ export default function DashboardPage() {
           </h1>
         </div>
 
-        {/* VIP CARD */}
-        <div
-          className="vip-card"
-          role="region"
-          aria-label="Digital VIP Membership Card"
-        >
-          <div className="vip-card-top">
-            <span className="vip-card-brand">UMGORA</span>
-            <span className="vip-card-type">VIP Member</span>
-          </div>
-
-          <div className="vip-card-number-section">
-            <p className="vip-card-number-label">Membership Number</p>
-            <p
-              className="vip-card-number"
-              id="membership-number-display"
-              aria-label={`Membership number: ${member.membership_number}`}
-            >
-              {formatMemberNumber(member.membership_number)}
-            </p>
-            <p className="vip-card-number-formatted">
-              #{member.membership_number}
-            </p>
-          </div>
-
-          <div className="vip-card-bottom">
-            <div>
-              <p className="vip-card-member-name">
-                {member.name.toUpperCase()} {member.surname.toUpperCase()}
-              </p>
-              <p className="vip-card-member-since">
-                Member since {formatDate(member.created_at)}
-              </p>
-            </div>
-            <div className="vip-card-chip" aria-hidden="true">
-              <div className="vip-card-chip-lines">
-                <span /><span /><span />
-              </div>
-            </div>
-          </div>
+        {/* Tabs Navigation */}
+        <div className="dashboard-tabs">
+          <button 
+            className={`dashboard-tab ${activeTab === 'places' ? 'active' : ''}`}
+            onClick={() => setActiveTab('places')}
+          >
+            My Places
+          </button>
+          <button 
+            className={`dashboard-tab ${activeTab === 'account' ? 'active' : ''}`}
+            onClick={() => setActiveTab('account')}
+          >
+            Account
+          </button>
         </div>
 
-        {/* Member Info Grid */}
-        <section aria-label="Membership details">
-          <div className="member-info-grid">
-            <div className="member-info-card">
-              <p className="member-info-label">Full Name</p>
-              <p className="member-info-value">{member.name} {member.surname}</p>
+        {/* Tab Content */}
+        {activeTab === 'places' && (
+          <section aria-label="My Places">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+              {places.map((place, index) => (
+                <div
+                  key={place.id || index}
+                  className="vip-card"
+                  role="region"
+                  aria-label="Digital VIP Membership Card"
+                >
+                  <div className="vip-card-top">
+                    <span className="vip-card-brand">UMGORA</span>
+                    <span className="vip-card-type">VIP Member</span>
+                  </div>
+
+                  <div className="vip-card-number-section">
+                    <p className="vip-card-number-label">Membership Number</p>
+                    <p
+                      className="vip-card-number"
+                      aria-label={`Membership number: ${place.membership_number}`}
+                    >
+                      {formatMemberNumber(place.membership_number)}
+                    </p>
+                    <p className="vip-card-number-formatted">
+                      #{place.membership_number}
+                    </p>
+                  </div>
+
+                  <div className="vip-card-bottom">
+                    <div>
+                      <p className="vip-card-member-name">
+                        {(place.first_name || member.name).toUpperCase()} {(place.last_name || member.surname).toUpperCase()}
+                      </p>
+                      <p style={{
+                        fontSize: '0.58rem',
+                        letterSpacing: '0.15em',
+                        textTransform: 'uppercase',
+                        color: 'rgba(193, 160, 99, 0.9)',
+                        marginTop: '0.35rem',
+                        marginBottom: '0.5rem',
+                        fontFamily: 'var(--font-sans)',
+                      }}>
+                        {place.email || member.email}
+                      </p>
+                      <p className="vip-card-member-since">
+                        Member since {formatDate(place.created_at)}
+                      </p>
+                    </div>
+                    <div 
+                      className="vip-card-chip" 
+                      onClick={() => copyToClipboard(place.membership_number, place.id)}
+                      style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyItems: 'center', background: 'transparent' }}
+                      title="Copy Membership Number"
+                    >
+                      {copiedId === place.id ? (
+                        <Check size={18} color="var(--color-champagne-dark)" style={{ margin: 'auto' }} />
+                      ) : (
+                        <Copy size={18} color="var(--color-silver-dark)" style={{ margin: 'auto' }} />
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            <div className="member-info-card">
-              <p className="member-info-label">Email</p>
-              <p className="member-info-value" style={{ wordBreak: 'break-all' }}>
-                {member.email}
-              </p>
-            </div>
+            <button 
+              className="btn-acquire-ghost"
+              onClick={() => setIsAcquireModalOpen(true)}
+            >
+              + Acquire Additional Placement
+            </button>
+          </section>
+        )}
 
-            <div className="member-info-card">
-              <p className="member-info-label">Social Handle</p>
-              <p className="member-info-value">
-                {member.social_handle || (
-                  <span style={{ color: 'var(--color-silver-dark)', fontStyle: 'italic' }}>
-                    Not provided
-                  </span>
-                )}
-              </p>
-            </div>
+        {activeTab === 'account' && (
+          <section aria-label="Membership details">
+            <div className="member-info-grid">
+              <div className="member-info-card">
+                <p className="member-info-label">Full Name</p>
+                <p className="member-info-value">{member.name} {member.surname}</p>
+              </div>
 
-            <div className="member-info-card">
-              <p className="member-info-label">Member Since</p>
-              <p className="member-info-value">{formatDate(member.created_at)}</p>
-            </div>
+              <div className="member-info-card">
+                <p className="member-info-label">Email</p>
+                <p className="member-info-value" style={{ wordBreak: 'break-all' }}>
+                  {member.email}
+                </p>
+              </div>
 
-            <div className="member-info-card">
-              <p className="member-info-label">Membership Status</p>
-              <p className="member-info-value" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span style={{
-                  width: 8, height: 8, borderRadius: '50%',
-                  background: 'var(--color-success)', display: 'inline-block'
-                }} />
-                Active
-              </p>
-            </div>
+              <div className="member-info-card">
+                <p className="member-info-label">Social Handle</p>
+                <p className="member-info-value">
+                  {member.social_handle || (
+                    <span style={{ color: 'var(--color-silver-dark)', fontStyle: 'italic' }}>
+                      Not provided
+                    </span>
+                  )}
+                </p>
+              </div>
 
-            <div className="member-info-card">
-              <p className="member-info-label">Membership ID</p>
-              <p className="member-info-value" style={{
-                fontFamily: 'var(--font-serif)',
-                fontSize: '1rem',
-                letterSpacing: '0.1em',
-                color: 'var(--color-champagne)',
-              }}>
-                #{member.membership_number}
-              </p>
+              <div className="member-info-card">
+                <p className="member-info-label">Account Created</p>
+                <p className="member-info-value">{formatDate(member.created_at)}</p>
+              </div>
+
+              <div className="member-info-card">
+                <p className="member-info-label">Account Status</p>
+                <p className="member-info-value" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%',
+                    background: 'var(--color-success)', display: 'inline-block'
+                  }} />
+                  Active
+                </p>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* Footer note */}
         <div style={{
@@ -234,10 +365,16 @@ export default function DashboardPage() {
             lineHeight: 1.8,
             fontWeight: 300,
           }}>
-            Your UMGORA membership is permanent and non-transferable. Your 10-digit membership number is your unique identifier within the circle. Keep it private.
+            Your UMGORA membership is permanent and non-transferable. Your 10-character membership ID is your unique identifier within the circle. Keep it private.
           </p>
         </div>
       </main>
+
+      <AcquirePlacementModal 
+        isOpen={isAcquireModalOpen}
+        onClose={() => setIsAcquireModalOpen(false)}
+        memberId={member.id}
+      />
     </div>
   )
 }

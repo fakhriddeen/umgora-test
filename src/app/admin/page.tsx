@@ -3,17 +3,21 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { supabase } from '@/lib/supabase'
 
-interface Member {
+interface Place {
   id: string
   membership_number: string
-  name: string
-  surname: string
-  email: string
+  first_name: string | null
+  last_name: string | null
+  email: string | null
   social_handle: string | null
-  payment_status: string
-  stripe_payment_id: string | null
   created_at: string
+  members: {
+    email: string
+    payment_status: string
+    stripe_payment_id: string | null
+  }
 }
 
 function formatDate(iso: string): string {
@@ -26,15 +30,15 @@ function formatDate(iso: string): string {
 
 export default function AdminPage() {
   const router = useRouter()
-  const [members, setMembers] = useState<Member[]>([])
+  const [places, setPlaces] = useState<Place[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetchMembers()
+    fetchPlaces()
   }, [])
 
-  async function fetchMembers() {
+  async function fetchPlaces() {
     try {
       const res = await fetch('/api/admin')
       if (res.status === 401) {
@@ -43,9 +47,9 @@ export default function AdminPage() {
       }
       const data = await res.json()
       if (res.ok) {
-        setMembers(data.members || [])
+        setPlaces(data.members || [])
       } else {
-        setError(data.error || 'Failed to load members')
+        setError(data.error || 'Failed to load places')
       }
     } catch {
       setError('Network error')
@@ -54,10 +58,31 @@ export default function AdminPage() {
     }
   }
 
-  async function handleSignOut() {
-    await fetch('/api/admin', { method: 'DELETE' })
-    router.push('/login')
-  }
+  const handleSignOut = async () => {
+    try {
+      if (typeof window !== 'undefined' && supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (err) {
+      console.error('Error signing out of Supabase:', err);
+    }
+
+    if (typeof window !== 'undefined') {
+      localStorage.clear();
+      sessionStorage.clear();
+
+      document.cookie.split(";").forEach((c) => {
+        document.cookie = c
+          .replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+
+      // Optional: still call the backend to clear server-side session if needed
+      await fetch('/api/admin', { method: 'DELETE' }).catch(() => {});
+
+      window.location.href = '/';
+    }
+  };
 
   if (loading) {
     return (
@@ -153,26 +178,26 @@ export default function AdminPage() {
         {/* Stats */}
         <div className="admin-stats">
           <div className="admin-stat-card">
-            <p className="admin-stat-value">{members.length}</p>
-            <p className="admin-stat-label">Total Members</p>
+            <p className="admin-stat-value">{places.length}</p>
+            <p className="admin-stat-label">Total Placements</p>
           </div>
           <div className="admin-stat-card">
             <p className="admin-stat-value">
-              {members.filter(m => m.payment_status === 'paid').length}
+              {places.filter(p => p.members?.payment_status === 'paid').length}
             </p>
-            <p className="admin-stat-label">Paid Members</p>
+            <p className="admin-stat-label">Paid Placements</p>
           </div>
           <div className="admin-stat-card">
             <p className="admin-stat-value">
-              {members.filter(m => m.social_handle).length}
+              {places.filter(p => p.social_handle).length}
             </p>
             <p className="admin-stat-label">With Social</p>
           </div>
           <div className="admin-stat-card">
             <p className="admin-stat-value">
-              {members.filter(m => {
+              {places.filter(p => {
                 const today = new Date()
-                const created = new Date(m.created_at)
+                const created = new Date(p.created_at)
                 const diff = (today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)
                 return diff <= 30
               }).length}
@@ -199,48 +224,56 @@ export default function AdminPage() {
         {/* Members Table */}
         <div className="admin-table-section">
           <div className="admin-table-header">
-            <h2 className="admin-table-title">Registered Members</h2>
-            <span className="admin-table-count">{members.length} records</span>
+            <h2 className="admin-table-title">Registered Placements</h2>
+            <span className="admin-table-count">{places.length} records</span>
           </div>
 
           <div className="admin-table-wrap">
-            {members.length === 0 ? (
+            {places.length === 0 ? (
               <div className="admin-empty">
                 <div className="admin-empty-icon">◈</div>
                 <p style={{ fontSize: '0.82rem', letterSpacing: '0.06em' }}>
-                  No members registered yet
+                  No placements registered yet
                 </p>
               </div>
             ) : (
-              <table className="admin-table" aria-label="Registered members">
+              <table className="admin-table" aria-label="Registered placements">
                 <thead>
                   <tr>
                     <th scope="col">#</th>
                     <th scope="col">Membership ID</th>
-                    <th scope="col">Name</th>
-                    <th scope="col">Email</th>
+                    <th scope="col">Place Name</th>
+                    <th scope="col">Place Email</th>
+                    <th scope="col">Master Email</th>
                     <th scope="col">Social</th>
                     <th scope="col">Status</th>
                     <th scope="col">Joined</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {members.map((member, index) => (
-                    <tr key={member.id}>
+                  {places.map((place, index) => (
+                    <tr key={place.id}>
                       <td style={{ color: 'rgba(250,249,246,0.3)', fontSize: '0.72rem' }}>
                         {index + 1}
                       </td>
                       <td className="membership-number">
-                        {member.membership_number.slice(0,4)} · {member.membership_number.slice(4,7)} · {member.membership_number.slice(7,10)}
+                        {place.membership_number.slice(0,4)} · {place.membership_number.slice(4,8)} · {place.membership_number.slice(8,10)}
                       </td>
                       <td>
-                        <div style={{ fontWeight: 500 }}>{member.name} {member.surname}</div>
+                        <div style={{ fontWeight: 500 }}>
+                          {place.first_name ? `${place.first_name} ${place.last_name || ''}` : <span style={{ color: 'rgba(250,249,246,0.3)' }}>Legacy Auto-sync</span>}
+                        </div>
                       </td>
-                      <td style={{ color: 'rgba(250,249,246,0.6)' }}>{member.email}</td>
+                      <td style={{ color: 'rgba(250,249,246,0.8)' }}>
+                        {place.email || <span style={{ color: 'rgba(250,249,246,0.3)' }}>Legacy Auto-sync</span>}
+                      </td>
+                      <td style={{ color: 'rgba(250,249,246,0.5)', fontSize: '0.8rem' }}>
+                        {place.members?.email}
+                      </td>
                       <td>
-                        {member.social_handle ? (
+                        {place.social_handle ? (
                           <span style={{ color: 'var(--color-champagne-light)' }}>
-                            {member.social_handle}
+                            {place.social_handle}
                           </span>
                         ) : (
                           <span style={{ color: 'rgba(250,249,246,0.25)', fontStyle: 'italic' }}>
@@ -249,13 +282,13 @@ export default function AdminPage() {
                         )}
                       </td>
                       <td>
-                        <span className={`status-badge ${member.payment_status === 'paid' ? 'paid' : 'pending'}`}>
+                        <span className={`status-badge ${place.members?.payment_status === 'paid' ? 'paid' : 'pending'}`}>
                           <span className="status-dot" />
-                          {member.payment_status}
+                          {place.members?.payment_status || 'unknown'}
                         </span>
                       </td>
                       <td style={{ color: 'rgba(250,249,246,0.5)', fontSize: '0.78rem' }}>
-                        {formatDate(member.created_at)}
+                        {formatDate(place.created_at)}
                       </td>
                     </tr>
                   ))}

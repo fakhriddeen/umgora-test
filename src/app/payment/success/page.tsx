@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 interface Member {
   id: string
@@ -30,10 +31,14 @@ function PaymentSuccessContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const sessionId = searchParams.get('session_id')
+  const purchaseType = searchParams.get('type')
   const [member, setMember] = useState<Member | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [attempts, setAttempts] = useState(0)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [processingInBackground, setProcessingInBackground] = useState(false)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     if (!sessionId) {
@@ -42,7 +47,7 @@ function PaymentSuccessContent() {
     }
 
     // Poll for member record (webhook may take a few seconds)
-    async function fetchMember() {
+    async function fetchMember(currentAttempt: number) {
       try {
         const res = await fetch(`/api/member?session_id=${sessionId}`)
         const data = await res.json()
@@ -50,12 +55,43 @@ function PaymentSuccessContent() {
         if (res.ok && data.member) {
           setMember(data.member)
           setLoading(false)
+          
+          // If it's an additional placement, we don't want to overwrite the master account session
+          if (data.member.isAdditional) {
+            setAuthLoading(false)
+            return true
+          }
+
           // Store in localStorage for dashboard persistence
           localStorage.setItem('umgora_member', JSON.stringify(data.member))
+          // Set custom member cookie to persist session state
+          document.cookie = "umgora_member_id=" + data.member.id + "; path=/;";
+
+          // Attempt Auto-Login with stored credentials
+          const checkoutEmail = sessionStorage.getItem('umgora_checkout_email');
+          const checkoutPasscode = sessionStorage.getItem('umgora_checkout_passcode');
+
+          if (checkoutEmail && checkoutPasscode) {
+            const { error: authError, data: authData } = await supabase.auth.signInWithPassword({
+              email: checkoutEmail,
+              password: checkoutPasscode,
+            });
+
+            if (!authError && authData.session) {
+              console.log("Auto-login successful! Session established.");
+              // Set strict SSR cookies
+              document.cookie = `sb-access-token=${authData.session.access_token}; path=/; max-age=${authData.session.expires_in}; SameSite=Lax; Secure`;
+              document.cookie = `sb-refresh-token=${authData.session.refresh_token}; path=/; max-age=${authData.session.expires_in}; SameSite=Lax; Secure`;
+            } else {
+              console.error("Background auto-login failed:", authError?.message);
+            }
+          }
+          
+          setAuthLoading(false);
           return true
         }
 
-        if (data.pending && attempts < 5) {
+        if (data.pending && currentAttempt < 10) {
           return false // will retry
         }
 
@@ -71,15 +107,22 @@ function PaymentSuccessContent() {
 
     let pollCount = 0
     const poll = async () => {
-      const done = await fetchMember()
-      if (!done && pollCount < 5) {
+      const done = await fetchMember(pollCount)
+      if (!done && pollCount < 10) {
         pollCount++
         setAttempts(pollCount)
-        setTimeout(poll, 2000)
+        timeoutRef.current = setTimeout(poll, 2000)
+      } else if (!done) {
+        setLoading(false)
+        setProcessingInBackground(true)
       }
     }
 
     poll()
+
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    }
   }, [sessionId, router])
 
   if (loading) {
@@ -98,6 +141,31 @@ function PaymentSuccessContent() {
           }}>
             {attempts > 0 ? `Confirming payment${'.'.repeat(Math.min(attempts, 3))}` : 'Verifying payment…'}
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (processingInBackground) {
+    return (
+      <div className="success-page">
+        <div className="success-icon" style={{ color: '#B89B5E', opacity: 0.8 }} aria-hidden="true">✓</div>
+        <h1 className="success-title" style={{ fontSize: '2rem' }}>Payment Secured</h1>
+        <p className="success-subtitle" style={{ opacity: 0, animation: 'fadeUp 0.6s 0.2s forwards' }}>
+          Your payment was successful. Your additional placement is being generated securely in the background and will appear in your dashboard shortly.
+        </p>
+        <div style={{
+          display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center',
+          opacity: 0, animation: 'fadeUp 0.6s 0.6s forwards', marginTop: '3rem'
+        }}>
+          <button
+            onClick={() => window.location.href = '/dashboard'}
+            className="btn-cta"
+            style={{ fontSize: '0.72rem', padding: '0.875rem 2rem' }}
+          >
+            Go to Dashboard
+            <span className="btn-cta-arrow">→</span>
+          </button>
         </div>
       </div>
     )
@@ -133,6 +201,31 @@ function PaymentSuccessContent() {
             style={{ cursor: 'pointer', color: 'var(--color-champagne)', fontSize: '0.8rem', letterSpacing: '0.1em', background: 'none', border: 'none' }}
           >
             ← Return to UMGORA
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (purchaseType === 'additional') {
+    return (
+      <div className="success-page">
+        <div className="success-icon" aria-hidden="true">✦</div>
+        <h1 className="success-title">Placement Secured</h1>
+        <p className="success-subtitle" style={{ opacity: 0, animation: 'fadeUp 0.6s 0.6s forwards' }}>
+          Your new placement has been confirmed and added to your circle.
+        </p>
+        <div style={{
+          display: 'flex', gap: '1rem', flexWrap: 'wrap', justifyContent: 'center',
+          opacity: 0, animation: 'fadeUp 0.6s 1.2s forwards', marginTop: '3rem'
+        }}>
+          <button
+            onClick={() => window.location.href = '/dashboard'}
+            className="btn-cta"
+            style={{ fontSize: '0.72rem', padding: '0.875rem 2rem' }}
+          >
+            View Dashboard
+            <span className="btn-cta-arrow">→</span>
           </button>
         </div>
       </div>
@@ -184,12 +277,13 @@ function PaymentSuccessContent() {
       }}>
         <button
           id="btn-go-dashboard"
-          onClick={() => router.push('/dashboard')}
+          onClick={() => window.location.href = '/dashboard'}
           className="btn-cta"
+          disabled={authLoading}
           style={{ fontSize: '0.72rem', padding: '0.875rem 2rem' }}
         >
-          View Dashboard
-          <span className="btn-cta-arrow">→</span>
+          {authLoading ? 'Authenticating...' : 'View Dashboard'}
+          {!authLoading && <span className="btn-cta-arrow">→</span>}
         </button>
         <button
           onClick={() => router.push('/')}

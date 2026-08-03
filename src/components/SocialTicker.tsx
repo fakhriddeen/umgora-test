@@ -40,7 +40,7 @@ export default function SocialTicker() {
     >
       <div className="ticker-dot" />
       <div className="ticker-silhouette" aria-hidden="true">
-        <svg width="10" height="12" viewBox="0 0 10 12" fill="none">
+        <svg width="14" height="16" viewBox="0 0 10 12" fill="none">
           <circle cx="5" cy="3.5" r="2.5" fill="rgba(100,100,95,0.6)" />
           <path d="M1 12c0-2.2 1.8-4 4-4s4 1.8 4 4" fill="rgba(100,100,95,0.4)" />
         </svg>

@@ -3,7 +3,7 @@ import { stripe } from '@/lib/stripe'
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, surname, social, email, passcode } = await req.json()
+    const { name, surname, social, email, passcode, member_id } = await req.json()
 
     if (!name || !surname || !email || !passcode) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -35,8 +35,9 @@ export async function POST(req: NextRequest) {
         social: social || '',
         email,
         passcode,
+        ...(member_id && { member_id }),
       },
-      success_url: `${appUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: `${appUrl}/payment/success?session_id={CHECKOUT_SESSION_ID}${member_id ? '&type=additional' : ''}`,
       cancel_url: `${appUrl}/?cancelled=true`,
     })
 

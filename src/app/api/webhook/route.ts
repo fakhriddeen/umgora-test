@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { stripe } from '@/lib/stripe'
 import { createAdminClient } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
-
-// Generate a unique 10-digit number
-function generateMembershipNumber(): string {
-  const num = Math.floor(1000000000 + Math.random() * 9000000000)
-  return num.toString()
-}
+import { generateMembershipId } from '@/lib/id-generator'
 
 export async function POST(req: NextRequest) {
   const body = await req.text()
@@ -32,66 +27,86 @@ export async function POST(req: NextRequest) {
       payment_status: string;
     }
 
-    const { name, surname, social, email, passcode } = session.metadata
+    const { name, surname, social, email, passcode, member_id } = session.metadata
 
     const supabase = createAdminClient()
 
-    // Generate a unique 10-digit membership number (collision-safe)
-    let membershipNumber = ''
-    let isUnique = false
-    let attempts = 0
-
-    while (!isUnique && attempts < 10) {
-      membershipNumber = generateMembershipNumber()
-      const { data } = await supabase
-        .from('members')
-        .select('membership_number')
-        .eq('membership_number', membershipNumber)
-        .single()
-
-      if (!data) isUnique = true
-      attempts++
+    // Generate a unique alphanumeric ID
+    let membershipId = '';
+    try {
+      membershipId = await generateMembershipId(supabase);
+    } catch (err) {
+      console.error('Failed to generate unique membership ID:', err);
+      return NextResponse.json({ error: 'Failed to generate ID' }, { status: 500 });
     }
 
-    if (!isUnique) {
-      console.error('Failed to generate unique membership number after 10 attempts')
-      return NextResponse.json({ error: 'Failed to generate ID' }, { status: 500 })
-    }
-
-    // Check if email already registered (avoid duplicates)
+    // Check if email already registered
     const { data: existing } = await supabase
       .from('members')
       .select('id')
       .eq('email', email)
-      .single()
+      .maybeSingle()
 
-    if (existing) {
-      console.log('Member already exists for email:', email)
-      return NextResponse.json({ received: true })
+    let memberId = member_id || existing?.id;
+
+    // If new user, create Auth and Member rows
+    if (!memberId) {
+      // 1. Create User in Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email,
+        password: passcode,
+        email_confirm: true,
+      });
+
+      if (authError) {
+        console.error('Failed to create Auth user:', authError.message);
+        const { data: existingUser } = await supabase.auth.admin.listUsers();
+        const match = existingUser?.users.find(u => u.email === email);
+        if (match) memberId = match.id;
+      } else {
+        memberId = authData.user.id;
+      }
+
+      // 2. Hash the passcode
+      const hashedPasscode = await bcrypt.hash(passcode, 12);
+
+      // 3. Save to database members table
+      const { error: memberError } = await supabase.from('members').insert({
+        ...(memberId ? { id: memberId } : {}),
+        membership_number: membershipId, // Legacy fallback
+        name,
+        surname,
+        email,
+        social_handle: social || null,
+        stripe_payment_id: session.id,
+        payment_status: session.payment_status,
+        passcode: hashedPasscode,
+        created_at: new Date().toISOString(),
+      });
+
+      if (memberError) {
+        console.error('Failed to save member:', memberError);
+        return NextResponse.json({ error: 'DB insert failed' }, { status: 500 });
+      }
     }
 
-    // Hash the passcode before storing
-    const hashedPasscode = await bcrypt.hash(passcode, 12)
-
-    // Save to database
-    const { error } = await supabase.from('members').insert({
-      membership_number: membershipNumber,
-      name,
-      surname,
-      email,
+    // 4. Save the new placement to the places table
+    const { error: placeError } = await supabase.from('places').insert({
+      member_id: memberId,
+      membership_number: membershipId,
+      first_name: name,
+      last_name: surname,
+      email: email,
       social_handle: social || null,
-      stripe_payment_id: session.id,
-      payment_status: session.payment_status,
-      passcode: hashedPasscode,
       created_at: new Date().toISOString(),
-    })
+    });
 
-    if (error) {
-      console.error('Failed to save member:', error)
-      return NextResponse.json({ error: 'DB insert failed' }, { status: 500 })
+    if (placeError) {
+      console.error('Failed to save place:', placeError);
+      return NextResponse.json({ error: 'DB place insert failed' }, { status: 500 });
     }
 
-    console.log(`New member saved: ${name} ${surname} — ID: ${membershipNumber}`)
+    console.log(`New placement saved for ${email} — ID: ${membershipId}`);
   }
 
   return NextResponse.json({ received: true })

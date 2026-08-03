@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -13,34 +14,83 @@ export default function LoginPage() {
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!email.trim() || !passcode.trim()) return
+    
+    // In our state, 'email' is actually the generic identifier field.
+    let identifier = email.trim()
+    if (!identifier || !passcode.trim()) return
 
     setLoading(true)
     setError('')
 
     try {
-      // Send both passcode (member path) and password (admin path uses same field)
-      const res = await fetch('/api/admin', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), passcode, password: passcode }),
-      })
-
-      const data = await res.json()
-
-      if (res.ok && data.success) {
-        if (data.role === 'admin') {
-          router.push('/admin')
-        } else if (data.role === 'member' && data.member) {
-          // Persist member data for dashboard
-          localStorage.setItem('umgora_member', JSON.stringify(data.member))
-          router.push('/dashboard')
+      // 1. First, try the Admin hardcoded login (fallback to existing API)
+      if (identifier === 'admin@umgora.com') {
+        const res = await fetch('/api/admin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: identifier, passcode, password: passcode }),
+        })
+        const data = await res.json()
+        if (res.ok && data.success && data.role === 'admin') {
+          window.location.href = '/admin'
+          return
         }
-        return
       }
 
-      setError(data.error || 'Invalid email or passcode.')
-    } catch {
+      // 1.5 Resolve identifier to email if it's a membership number or handle
+      let emailToUse = identifier;
+      if (!emailToUse.includes('@')) {
+        const { data: memberLookup } = await supabase
+          .from('members')
+          .select('email')
+          .or(`membership_number.eq.${emailToUse},social_handle.eq.${emailToUse}`)
+          .maybeSingle();
+          
+        if (memberLookup?.email) {
+          emailToUse = memberLookup.email;
+        }
+      }
+
+      console.log('[Login Attempt]', { identifier: emailToUse, password: passcode });
+
+      // 2. Member Login via Supabase Auth
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: emailToUse,
+        password: passcode,
+      });
+
+      if (authError) {
+        console.error("Login failed:", authError.message);
+        setError(authError.message);
+        return;
+      }
+
+      if (data.session) {
+        // Explicitly set the cookie for SSR in app/page.tsx
+        document.cookie = `sb-access-token=${data.session.access_token}; path=/; max-age=${data.session.expires_in}; SameSite=Lax; Secure`;
+        document.cookie = `sb-refresh-token=${data.session.refresh_token}; path=/; max-age=${data.session.expires_in}; SameSite=Lax; Secure`;
+
+        // 3. Check Custom Profile in Database
+        const authUser = data.session.user;
+        const { data: member, error: profileError } = await supabase
+          .from('members')
+          .select('*')
+          .or(`id.eq.${authUser.id},email.eq.${emailToUse}`)
+          .maybeSingle();
+
+        if (profileError || !member) {
+          console.error("Auth succeeded but custom profile check failed:", profileError);
+          // We don't block them entirely, the dashboard syncing state will catch them
+        } else {
+          // Rewrite the local storage key for legacy components just in case
+          localStorage.setItem('umgora_member', JSON.stringify(member));
+        }
+
+        // Force hard redirect to hydrate Server Components
+        window.location.href = '/dashboard';
+      }
+    } catch (err) {
+      console.error(err);
       setError('Network error. Please check your connection.')
     } finally {
       setLoading(false)
@@ -66,16 +116,16 @@ export default function LoginPage() {
 
               <div className="form-group">
                 <label className="form-label" htmlFor="login-email">
-                  Email
+                  Email, Membership ID, or Handle
                 </label>
                 <input
                   id="login-email"
-                  type="email"
+                  type="text"
                   className="form-input"
-                  placeholder="your@email.com"
+                  placeholder="Enter email or ID"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  autoComplete="email"
+                  autoComplete="username"
                   autoFocus
                 />
               </div>
