@@ -213,12 +213,13 @@ export default function RegisterModal({ onClose }: RegisterModalProps) {
               </label>
               <input
                 id="reg-social"
-                type="text"
+                type="text" // Explicitly text, not url
                 className="form-input"
                 placeholder="@yourusername"
                 value={form.social}
                 onChange={e => handleChange('social', e.target.value)}
                 autoComplete="off"
+                formNoValidate // Bypass native URL validation just in case
               />
             </div>
 

@@ -276,10 +276,11 @@ export default function AcquirePlacementModal({ isOpen, onClose, memberId }: Acq
                 Social Handle (Optional)
               </label>
               <input
-                type="text"
+                type="text" // Forcefully changed from any url validation to simple text
                 placeholder="@username"
                 value={formData.social}
                 onChange={e => setFormData({ ...formData, social: e.target.value })}
+                formNoValidate // Bypass native browser validation just in case
                 style={{
                   width: '100%',
                   padding: '0.75rem 1rem',
