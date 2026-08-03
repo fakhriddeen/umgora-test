@@ -9,15 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    let appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-
-    // Force absolute URL for Stripe
-    if (!appUrl.startsWith('http://') && !appUrl.startsWith('https://')) {
-      appUrl = `https://${appUrl}`;
-    }
-
-    // Strip any trailing slashes to prevent malformed double-slash routes
-    appUrl = appUrl.replace(/\/$/, "");
+    const appUrl = 'https://umgora.com';
 
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
