@@ -51,6 +51,7 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'places' | 'account'>('places')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [isAcquireModalOpen, setIsAcquireModalOpen] = useState(false)
+  const [showComingSoon, setShowComingSoon] = useState(false)
 
   useEffect(() => {
     async function checkAuth() {
@@ -299,10 +300,29 @@ export default function DashboardPage() {
 
             <button 
               className="btn-acquire-ghost"
-              onClick={() => setIsAcquireModalOpen(true)}
+              onClick={() => {
+                setShowComingSoon(true)
+                setTimeout(() => setShowComingSoon(false), 4000)
+              }}
             >
               + Acquire Additional Placement
             </button>
+            
+            {showComingSoon && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.75rem',
+                background: 'rgba(250,249,246,0.05)',
+                border: '1px solid rgba(184, 155, 94, 0.5)',
+                borderRadius: '0.5rem',
+                color: 'var(--color-champagne-light)',
+                fontSize: '0.75rem',
+                textAlign: 'center',
+                letterSpacing: '0.05em'
+              }}>
+                Additional placements are currently paused and will be returning soon.
+              </div>
+            )}
           </section>
         )}
 

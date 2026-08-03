@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
               description: 'Lifetime exclusive membership with unique 10-digit ID',
               images: [],
             },
-            unit_amount: 9900, // $99.00 — adjust as needed
+            unit_amount: 100, // $1.00 — temporary drop
           },
           quantity: 1,
         },
