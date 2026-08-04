@@ -39,9 +39,9 @@ export async function generateMembershipId(supabase: SupabaseClient, retries = 0
   const rawId = createRawId();
   
   try {
-    // Verify against places table
+    // Verify against members table
     const { data, error } = await supabase
-      .from('places')
+      .from('members')
       .select('membership_number')
       .eq('membership_number', rawId)
       .maybeSingle();
