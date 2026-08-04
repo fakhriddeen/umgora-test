@@ -49,7 +49,9 @@ export async function POST(req: NextRequest) {
 
     let memberId = member_id || existing?.id;
 
-    // If new user, create Auth and Member rows
+    let hashedPasscode = undefined;
+
+    // If new user, create Auth
     if (!memberId) {
       // 1. Create User in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
@@ -68,42 +70,26 @@ export async function POST(req: NextRequest) {
       }
 
       // 2. Hash the passcode
-      const hashedPasscode = await bcrypt.hash(passcode, 12);
-
-      // 3. Save to database members table
-      const { error: memberError } = await supabase.from('members').insert({
-        ...(memberId ? { id: memberId } : {}),
-        membership_number: membershipId, // Legacy fallback
-        name,
-        surname,
-        email,
-        social_handle: social || null,
-        stripe_payment_id: session.id,
-        payment_status: session.payment_status,
-        passcode: hashedPasscode,
-        created_at: new Date().toISOString(),
-      });
-
-      if (memberError) {
-        console.error('Failed to save member:', memberError);
-        return NextResponse.json({ error: 'DB insert failed' }, { status: 500 });
-      }
+      hashedPasscode = await bcrypt.hash(passcode, 12);
     }
 
-    // 4. Save the new placement to the places table
-    const { error: placeError } = await supabase.from('places').insert({
-      member_id: memberId,
+    // 3. Save the placement to the members table
+    const { error: memberError } = await supabase.from('members').insert({
+      ...(memberId && !existing?.id ? { id: memberId } : {}), // Only force ID if it's the master account
       membership_number: membershipId,
-      first_name: name,
-      last_name: surname,
-      email: email,
+      name,
+      surname,
+      email,
       social_handle: social || null,
+      stripe_payment_id: session.id,
+      ...(session.payment_status ? { payment_status: session.payment_status } : {}),
+      ...(hashedPasscode ? { passcode: hashedPasscode } : {}),
       created_at: new Date().toISOString(),
     });
 
-    if (placeError) {
-      console.error('Failed to save place:', placeError);
-      return NextResponse.json({ error: 'DB place insert failed' }, { status: 500 });
+    if (memberError) {
+      console.error('Failed to save member:', memberError);
+      return NextResponse.json({ error: 'DB insert failed' }, { status: 500 });
     }
 
     console.log(`New placement saved for ${email} — ID: ${membershipId}`);
